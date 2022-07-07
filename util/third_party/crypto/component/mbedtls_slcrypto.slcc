@@ -22,39 +22,53 @@ source:
   - path: sl_component/sl_mbedtls_support/src/crypto_gcm.c
     condition: [mbedtls_gcm, device_has_crypto]
   - path: sl_component/sl_mbedtls_support/src/mbedtls_ccm.c
-    condition: [mbedtls_ccm, device_has_crypto]
+    condition: [mbedtls_ccm, device_has_crypto, psa_crypto]
   - path: sl_component/sl_mbedtls_support/src/mbedtls_cmac.c
-    condition: [mbedtls_cmac, device_has_crypto]
+    condition: [mbedtls_cmac, device_has_crypto, psa_crypto]
   - path: sl_component/sl_mbedtls_support/src/mbedtls_sha.c
+    condition: [mbedtls_sha_function, device_has_crypto, psa_crypto]
+  - path: sl_component/sl_mbedtls_support/src/no_psa/se_ccm.c
+    condition: [mbedtls_ccm, device_has_crypto]
+  - path: sl_component/sl_mbedtls_support/src/no_psa/se_cmac.c
+    condition: [mbedtls_cmac, device_has_crypto]
+  - path: sl_component/sl_mbedtls_support/src/no_psa/se_sha.c
     condition: [mbedtls_sha_function, device_has_crypto]
   # Series 2 device support with HSE
   - path: sl_component/sl_mbedtls_support/src/se_aes.c
     condition: [mbedtls_aes, device_has_semailbox]
   - path: sl_component/sl_mbedtls_support/src/mbedtls_ccm.c
-    condition: [mbedtls_ccm, device_has_semailbox]
+    condition: [mbedtls_ccm, device_has_semailbox, psa_crypto_ccm]
   - path: sl_component/sl_mbedtls_support/src/mbedtls_cmac.c
-    condition: [mbedtls_cmac, device_has_semailbox]
+    condition: [mbedtls_cmac, device_has_semailbox, psa_crypto]
   - path: sl_component/sl_mbedtls_support/src/mbedtls_ecdsa_ecdh.c
+    condition: [mbedtls_ecc, device_has_semailbox, psa_crypto]
+  - path: sl_component/sl_mbedtls_support/src/no_psa/se_ccm.c
+    condition: [mbedtls_ccm, device_has_semailbox]
+  - path: sl_component/sl_mbedtls_support/src/no_psa/se_cmac.c
+    condition: [mbedtls_cmac, device_has_semailbox]
+  - path: sl_component/sl_mbedtls_support/src/no_psa/se_ecp.c
     condition: [mbedtls_ecc, device_has_semailbox]
   - path: sl_component/sl_mbedtls_support/src/se_gcm.c
     condition: [mbedtls_gcm, device_has_semailbox]
   - path: sl_component/sl_mbedtls_support/src/se_jpake.c
     condition: [mbedtls_jpake, device_has_semailbox]
   - path: sl_component/sl_mbedtls_support/src/mbedtls_sha.c
+    condition: [mbedtls_sha_function, device_has_semailbox, psa_crypto]
+  - path: sl_component/sl_mbedtls_support/src/no_psa/se_sha.c
     condition: [mbedtls_sha_function, device_has_semailbox]
   # Series 2 device support with VSE
   - path: sl_component/sl_mbedtls_support/src/cryptoacc_aes.c
-    condition: [device_has_cryptoacc]
+    condition: [device_has_cryptoacc, psa_crypto]
   - path: sl_component/sl_mbedtls_support/src/mbedtls_ccm.c
-    condition: [device_has_cryptoacc]
+    condition: [device_has_cryptoacc, psa_crypto]
   - path: sl_component/sl_mbedtls_support/src/mbedtls_cmac.c
-    condition: [device_has_cryptoacc]
+    condition: [device_has_cryptoacc, psa_crypto]
   - path: sl_component/sl_mbedtls_support/src/mbedtls_ecdsa_ecdh.c
-    condition: [device_has_cryptoacc]
+    condition: [device_has_cryptoacc, psa_crypto]
   - path: sl_component/sl_mbedtls_support/src/cryptoacc_gcm.c
     condition: [device_has_cryptoacc]
   - path: sl_component/sl_mbedtls_support/src/mbedtls_sha.c
-    condition: [mbedtls_sha_function, device_has_cryptoacc]
+    condition: [mbedtls_sha_function, device_has_cryptoacc, psa_crypto]
 include:
   - path: sl_component/sl_mbedtls_support/inc
     file_list:
@@ -96,10 +110,6 @@ requires:
     condition: [device_series_2]
   - name: silabs_core_sl_malloc
   - name: component_catalog
-  - name: psa_driver
-    condition: [device_series_1]
-  - name: psa_driver
-    condition: [device_series_2]
   - name: enum
     condition: [device_has_cryptoacc]
 provides:
@@ -148,6 +158,9 @@ template_contribution:
       event: service_init
       include: sl_mbedtls.h
       handler: sl_mbedtls_init
+# Add a component catalog entry to allow build-time detection of MBEDTLS core presence
+  - name: component_catalog
+    value: mbedtls_slcrypto
 documentation:
   docset: mbed-tls
   document: group-sl-crypto

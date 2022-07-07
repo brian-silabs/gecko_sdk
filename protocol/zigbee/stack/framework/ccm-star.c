@@ -77,7 +77,15 @@ extern void emGetKeyFromCore(uint8_t* key);
 #if (defined SL_CATALOG_ZIGBEE_CCM_PSA_PRESENT)
 #define USE_PSA_CCM
 #elif (defined SL_CATALOG_ZIGBEE_CCM_SOFTWARE_PRESENT)
+#if (defined SL_CATALOG_MBEDTLS_SLCRYPTO_PRESENT)
+// Default - use mbedtls ccm implementation
+#include "mbedtls_config.h"
+#endif
 // Default - use software ccm implementation
+#if (defined SL_CATALOG_ZIGBEE_CCM_PSA_PRESENT)
+#include "mbedtls_config_autogen.h"
+#endif
+
 #else // None of the implementation present, then error
 #error Must enable one of the CCM implementation (Software or mbedtls)
 #endif // SL_CATALOG_ZIGBEE_
@@ -387,7 +395,13 @@ void emberCcmEncryptBytes(uint8_t *bytes,
          && (output_length == length));
 }
 
-#elif defined(MBEDTLS_CCM_C)
+#else
+#error "PSA CCM implementation configured through SLC, but one of the requirements is missing"
+#endif
+
+#else // !USE_PSA_CCM
+
+#if defined(MBEDTLS_CCM_C)
 // -----------------------------------------------------------------
 // Use mbedTLS software implementation as fallback if no drivers are
 // present (i.e. when compiling for sim / host). If PSA is compiled
@@ -553,11 +567,9 @@ void emberCcmEncryptBytes(uint8_t *bytes,
                               MIC_LENGTH);
 }
 
-#else
-#error "PSA CCM implementation configured through SLC, but one of the requirements is missing"
-#endif
 
-#else // !USE_PSA_CCM
+#else
+
 // -----------------------------------------------------------------
 // Software Implementation of CCM on top of the single-block AES API
 // -----------------------------------------------------------------
@@ -810,4 +822,5 @@ void emberCcmEncryptBytes(uint8_t *payload,
   ccmEncryptData(payload, length, 1, nonce);
 }
 
+#endif
 #endif
