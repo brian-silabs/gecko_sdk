@@ -52,6 +52,7 @@ static bool watchdogDisableInSleep;
 
 void halInternalEnableWatchDog(void)
 {
+  //Ensure the Power Manager is active, as halInit can occur before that 
   sl_power_manager_init();
   sl_power_manager_subscribe_em_transition_event(&events_handle,
                                                  &events_info);
@@ -114,46 +115,6 @@ bool halInternalWatchDogEnabled(void)
   return WDOGn_IsEnabled(SL_LEGACY_HAL_WDOG);
 }
 
-#else
-
-void halInternalEnableWatchDog(void)
-{
-}
-
-void halResetWatchdog(void)
-{
-}
-
-void halInternalDisableWatchDog(uint8_t magicKey)
-{
-  (void) magicKey;
-}
-
-bool halInternalWatchDogEnabled(void)
-{
-  return false;
-}
-
-#endif
-
-void SL_LEGACY_HAL_WDOG_IRQHandler(void)
-{
-  uint32_t intFlags = WDOGn_IntGet(SL_LEGACY_HAL_WDOG);
-  WDOGn_IntClear(SL_LEGACY_HAL_WDOG, intFlags);
-
-  NMI_Handler();
-}
-
-void halEnergyModeNotificationInit(void)
-{
-  sl_status_t result = sl_power_manager_init();
-
-  assert(result == SL_STATUS_OK);
-
-  sl_power_manager_subscribe_em_transition_event(&events_handle,
-                                                 &events_info);
-}
-
 /**
  * @brief On All Events callback
  *
@@ -197,3 +158,32 @@ static void events_handler(sl_power_manager_em_t from,
   }
 }
 
+void SL_LEGACY_HAL_WDOG_IRQHandler(void)
+{
+  uint32_t intFlags = WDOGn_IntGet(SL_LEGACY_HAL_WDOG);
+  WDOGn_IntClear(SL_LEGACY_HAL_WDOG, intFlags);
+
+  NMI_Handler();
+}
+
+#else
+
+void halInternalEnableWatchDog(void)
+{
+}
+
+void halResetWatchdog(void)
+{
+}
+
+void halInternalDisableWatchDog(uint8_t magicKey)
+{
+  (void) magicKey;
+}
+
+bool halInternalWatchDogEnabled(void)
+{
+  return false;
+}
+
+#endif
