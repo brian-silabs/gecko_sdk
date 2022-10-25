@@ -18,16 +18,43 @@
 #include PLATFORM_HEADER
 #include "sl_legacy_hal_wdog.h"
 
+#include "sl_power_manager.h"
+
 // sl_legacy_hal_wdog.h needs to be able to define all SL_LEGACY_HAL_WDOG_*
 // before these function will compile.
 #if defined(SL_LEGACY_HAL_WDOG)             \
   && defined(SL_LEGACY_HAL_WDOG_IRQn)       \
   && defined(SL_LEGACY_HAL_WDOG_IRQHandler) \
-  && defined(SL_LEGACY_HAL_WDOG_CMUCLOCK)   \
-  && defined(SL_LEGACY_HAL_WDOG_CMU_CLKENx_WDOGx_MASK)
+  && defined(SL_LEGACY_HAL_WDOG_CMUCLOCK)
+
+// EM Events
+#define SLEEP_EM_EVENT_MASK      (SL_POWER_MANAGER_EVENT_TRANSITION_ENTERING_EM0   \
+                                  | SL_POWER_MANAGER_EVENT_TRANSITION_LEAVING_EM0  \
+                                  | SL_POWER_MANAGER_EVENT_TRANSITION_ENTERING_EM1 \
+                                  | SL_POWER_MANAGER_EVENT_TRANSITION_LEAVING_EM1  \
+                                  | SL_POWER_MANAGER_EVENT_TRANSITION_ENTERING_EM2 \
+                                  | SL_POWER_MANAGER_EVENT_TRANSITION_LEAVING_EM2  \
+                                  | SL_POWER_MANAGER_EVENT_TRANSITION_ENTERING_EM3 \
+                                  | SL_POWER_MANAGER_EVENT_TRANSITION_LEAVING_EM3)
+
+static void events_handler(sl_power_manager_em_t from,
+                           sl_power_manager_em_t to);
+
+static sl_power_manager_em_transition_event_handle_t events_handle;
+static sl_power_manager_em_transition_event_info_t events_info =
+{
+  .event_mask = SLEEP_EM_EVENT_MASK,
+  .on_event = events_handler,
+};
+
+static bool watchdogDisableInSleep;
+
 
 void halInternalEnableWatchDog(void)
 {
+  sl_power_manager_init();
+  sl_power_manager_subscribe_em_transition_event(&events_handle,
+                                                 &events_info);
   // Enable LE interface
 #if !defined(_SILICON_LABS_32B_SERIES_2)
   CMU_ClockEnable(cmuClock_HFLE, true);
@@ -71,57 +98,20 @@ void halInternalEnableWatchDog(void)
 
 void halResetWatchdog(void)
 {
-#if defined(_CMU_HFBUSCLKEN0_LE_MASK)
-  if ((CMU->HFBUSCLKEN0 & _CMU_HFBUSCLKEN0_LE_MASK) != 0) {
-    WDOGn_Feed(SL_LEGACY_HAL_WDOG);
-  }
-#elif defined(SL_LEGACY_HAL_WDOG_CMU_CLKENx_WDOGx_MASK)
-  if ((CMU->CLKEN0 & SL_LEGACY_HAL_WDOG_CMU_CLKENx_WDOGx_MASK) != 0) {
-    WDOGn_Feed(SL_LEGACY_HAL_WDOG);
-  }
-#else
   WDOGn_Feed(SL_LEGACY_HAL_WDOG);
-#endif
 }
 
 void halInternalDisableWatchDog(uint8_t magicKey)
 {
-#if defined(_CMU_HFBUSCLKEN0_LE_MASK)
-  if ((CMU->HFBUSCLKEN0 & _CMU_HFBUSCLKEN0_LE_MASK) != 0) {
-    if ( magicKey == MICRO_DISABLE_WATCH_DOG_KEY ) {
-      WDOGn_Enable(SL_LEGACY_HAL_WDOG, false);
-    }
-  }
-#elif defined(SL_LEGACY_HAL_WDOG_CMU_CLKENx_WDOGx_MASK)
-  if ((CMU->CLKEN0 & SL_LEGACY_HAL_WDOG_CMU_CLKENx_WDOGx_MASK) != 0) {
-    if ( magicKey == MICRO_DISABLE_WATCH_DOG_KEY ) {
-      WDOGn_Enable(SL_LEGACY_HAL_WDOG, false);
-    }
-  }
-#else
   if ( magicKey == MICRO_DISABLE_WATCH_DOG_KEY ) {
-    WDOGn_Enable(SL_LEGACY_HAL_WDOG, false);
+    WDOGn_SyncWait(DEFAULT_WDOG);
+    WDOGn_Enable(DEFAULT_WDOG, false);
   }
-#endif
 }
 
 bool halInternalWatchDogEnabled(void)
 {
-#if defined(_CMU_HFBUSCLKEN0_LE_MASK)
-  if ((CMU->HFBUSCLKEN0 & _CMU_HFBUSCLKEN0_LE_MASK) != 0) {
-    return WDOGn_IsEnabled(SL_LEGACY_HAL_WDOG);
-  } else {
-    return 0;
-  }
-#elif defined(SL_LEGACY_HAL_WDOG_CMU_CLKENx_WDOGx_MASK)
-  if ((CMU->CLKEN0 & SL_LEGACY_HAL_WDOG_CMU_CLKENx_WDOGx_MASK) != 0) {
-    return WDOGn_IsEnabled(SL_LEGACY_HAL_WDOG);
-  } else {
-    return 0;
-  }
-#else
   return WDOGn_IsEnabled(SL_LEGACY_HAL_WDOG);
-#endif
 }
 
 #else
@@ -145,3 +135,65 @@ bool halInternalWatchDogEnabled(void)
 }
 
 #endif
+
+void SL_LEGACY_HAL_WDOG_IRQHandler(void)
+{
+  uint32_t intFlags = WDOGn_IntGet(SL_LEGACY_HAL_WDOG);
+  WDOGn_IntClear(SL_LEGACY_HAL_WDOG, intFlags);
+
+  NMI_Handler();
+}
+
+void halEnergyModeNotificationInit(void)
+{
+  sl_status_t result = sl_power_manager_init();
+
+  assert(result == SL_STATUS_OK);
+
+  sl_power_manager_subscribe_em_transition_event(&events_handle,
+                                                 &events_info);
+}
+
+/**
+ * @brief On All Events callback
+ *
+ * @param from EM level from where we start from
+ *
+ * @param to   EM level where we are going
+ */
+static void events_handler(sl_power_manager_em_t from,
+                           sl_power_manager_em_t to)
+{
+  if (from == SL_POWER_MANAGER_EM0) {
+    switch (to) {
+      case SL_POWER_MANAGER_EM1:
+        watchdogDisableInSleep = halInternalWatchDogEnabled();
+        if (watchdogDisableInSleep) {
+          halInternalDisableWatchDog(MICRO_DISABLE_WATCH_DOG_KEY);
+        }
+        break;
+
+      case SL_POWER_MANAGER_EM0:
+        break;
+
+      case SL_POWER_MANAGER_EM2:
+      case SL_POWER_MANAGER_EM3:
+        if (halInternalWatchDogEnabled()) {
+          WDOGn_SyncWait(SL_LEGACY_HAL_WDOG);
+        }
+        break;
+
+      default:
+        break;
+    }
+  } else { //from low power modes other than EM0
+    // restart watchdog if it was running when we entered sleep
+    // do this before dispatching interrupts while we still have tight
+    // control of code execution
+    if (watchdogDisableInSleep) {
+      WDOGn_Enable(SL_LEGACY_HAL_WDOG, true);
+    }
+
+  }
+}
+
